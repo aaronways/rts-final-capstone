@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AVIONICS ISR — Real-Time Systems Final Capstone</title>
+<title>AVIONICS ISR Latency Bench - Real-Time Systems Final Capstone</title>
 <meta name="description" content="EEE 4775 final capstone: interrupt latency and bottom-half scheduling on ESP32-S3 under a rate-monotonic load, with measured WCET and logic-analyzer timing evidence." />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -148,8 +148,19 @@
     color:var(--signal-deep);
     margin:0 0 8px;
   }
+  .qa h4{
+    font-family:var(--f-panel);
+    text-transform:uppercase;
+    letter-spacing:.09em;
+    font-size:.76rem;
+    color:var(--ink-3);
+    margin:16px 0 6px;
+  }
   .qa p{margin:0 0 11px}
   .qa p:last-child{margin-bottom:0}
+  .qa ol{margin:0 0 11px;padding-left:1.4em;max-width:74ch}
+  .qa ol li{margin-bottom:9px}
+  .qa ol code{display:block;margin-bottom:2px;color:var(--signal-deep)}
 
   .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.data{
@@ -251,8 +262,8 @@
       <span class="lbl">ESP32-S3 &middot; FreeRTOS &middot; ESP-IDF</span>
     </div>
     <h1>Avionics <span>ISR</span> Latency Bench</h1>
-    <p class="sub">An instrumented interrupt path that proves a radar-pulse handler still responds in
-    15 microseconds with a rate-monotonic avionics workload sharing its core.</p>
+    <p class="sub">An instrumented interrupt path that shows a radar pulse handler still responds in about
+    15 microseconds while a rate-monotonic avionics workload runs on the same core.</p>
   </div>
 </header>
 
@@ -294,7 +305,7 @@
 
     <div class="readout">
       <div><span class="lbl">Interrupt response</span><b>15.35 &#181;s</b></div>
-      <div><span class="lbl">Wake latency, idle</span><b>20&ndash;30 &#181;s</b></div>
+      <div><span class="lbl">Wake latency, idle</span><b>20-30 &#181;s</b></div>
       <div><span class="lbl">Total utilization</span><b>U = 0.246</b></div>
       <div><span class="lbl">RM bound, n=4</span><b>0.757</b></div>
     </div>
@@ -305,34 +316,37 @@
   <div class="wrap">
     <span class="lbl">01 &middot; Overview</span>
     <h2>What this system does</h2>
-    <p class="lede">A radar return arrives as a hardware interrupt. The ISR does the minimum legal work
-    &mdash; timestamp, debounce, signal &mdash; and hands the actual response to a lower-priority task, while
-    four periodic avionics tasks keep meeting their deadlines on the same core. The question the bench
-    answers is what delays that response: the signaling mechanism, or the priority ladder.</p>
+    <p class="lede">A radar return comes in as a hardware interrupt. The ISR does the minimum work it is
+    allowed to do, which is the timestamp, the debounce gate, and the signal. It then hands the actual
+    response off to a lower priority task. Four periodic avionics tasks keep running on the same core the
+    whole time. The question this bench answers is what actually delays the response, the signaling
+    mechanism or the priority ladder.</p>
 
     <div class="card">
       <h3>Configuration under test</h3>
       <ul class="tight">
-        <li>Button on GPIO 18, internal pull-up, negative-edge interrupt, 200&nbsp;&#181;s debounce gate.</li>
-        <li><code>IRAM_ATTR</code> ISR raises a scope pulse on GPIO 19, timestamps entry, and signals two
-        bottom halves &mdash; one binary semaphore, one direct task notification &mdash; so the two paths can be
-        compared on the same event.</li>
-        <li>Both bottom-half tasks at priority 12, pinned to Core 1.</li>
-        <li>Four periodic load tasks pinned to Core 1 on a rate-monotonic ladder: priorities 15 / 10 / 5 / 2
-        at periods 100 / 200 / 500 / 1000&nbsp;ms.</li>
-        <li>Compile-time switches: <code>WITH_LOAD</code> brings the load fixture online,
-        <code>BREAK_YIELD</code> removes the context-switch request from the ISR.</li>
+        <li>Button on GPIO 18, internal pull-up, negative edge interrupt, 200&nbsp;&#181;s debounce gate.</li>
+        <li>An <code>IRAM_ATTR</code> ISR raises a scope pulse on GPIO 19, timestamps entry, and signals two
+        bottom halves. One uses a binary semaphore and one uses a direct task notification, so both paths
+        can be compared on the same event.</li>
+        <li>Both bottom half tasks run at priority 12, pinned to Core 1.</li>
+        <li>Four periodic load tasks pinned to Core 1 on a rate-monotonic ladder. Priorities are 15 / 10 /
+        5 / 2 and periods are 100 / 200 / 500 / 1000&nbsp;ms.</li>
+        <li>Two compile time switches. <code>WITH_LOAD</code> brings the load fixture online and
+        <code>BREAK_YIELD</code> removes the context switch request from the ISR.</li>
       </ul>
-      <p style="font-size:.92rem;color:var(--ink-2)">The priority geometry is the point. Only load task A
-      at priority 15 outranks the bottom halves; B, C and D at 10, 5 and 2 do not. So exactly one task in
-      the fixture can delay a wake, and its cost is bounded by its own execution time.</p>
+      <p style="font-size:.92rem;color:var(--ink-2)">The priority geometry is the whole point. Load task A
+      at priority 15 is the only task in the fixture that outranks the bottom halves at 12. B, C and D at
+      10, 5 and 2 do not. This means only one task in the fixture can delay a wake, and the cost of that
+      delay is bounded by A's own execution time.</p>
     </div>
 
     <div class="card">
       <h3>Tailoring</h3>
-      <p>Built toward embedded and avionics software roles, which is why the deliverable is evidence rather
-      than features: a schedulability argument, three independent timing instruments, a hazard table mapped
-      to recognised standards, and a fault-injection result reported as measured rather than as hoped.</p>
+      <p>Built toward embedded and avionics software roles. That is why the deliverable is evidence instead
+      of features. It has a schedulability argument, three separate timing instruments, a hazard table
+      mapped to real standards, and a fault injection result reported the way it actually came out rather
+      than the way I expected it to.</p>
     </div>
   </div>
 </section>
@@ -361,22 +375,21 @@
     <figure class="ev">
       <img src="assets/diagrams/concurrency-timeline.png"
            alt="Timeline diagram comparing Core 1 with no load against Core 1 under four periodic load tasks, showing running, ready, and blocked states." />
-      <figcaption>Task states across the button interrupt. Running holds the CPU; ready wants the CPU and
-      has been preempted; blocked is waiting on the button or finished for the period.</figcaption>
+      <figcaption>Task states across the button interrupt. Running holds the CPU. Ready wants the CPU and
+      has been preempted. Blocked is waiting on the button or done for the period.</figcaption>
     </figure>
 
-    <p>Control flow is one hop. The GPIO edge fires the ISR, which timestamps entry into
-    <code>isr_entry_time_us</code>, gates on debounce, then issues both
+    <p>Control flow is one hop. The GPIO edge fires the ISR. The ISR timestamps entry into
+    <code>isr_entry_time_us</code>, checks the debounce gate, then calls both
     <code>xSemaphoreGiveFromISR</code> and <code>vTaskNotifyGiveFromISR</code> before requesting a context
-    switch. Each bottom half unblocks, reads the shared entry timestamp, computes its own wake latency,
-    updates a running maximum, and logs. Nothing else crosses between the interrupt and task contexts.</p>
+    switch. Each bottom half unblocks, reads the shared entry timestamp, works out its own wake latency,
+    updates a running maximum, and logs. Nothing else crosses between interrupt context and task context.</p>
 
-    <p><strong>One caveat the diagram does not show.</strong> <code>gpio_install_isr_service()</code> is
-    called from <code>app_main</code>, which runs on Core 0, so the interrupt is allocated on Core 0 while
-    both bottom halves are pinned to Core 1. Every wake in this build is therefore a cross-core wake. That
-    detail does not change the priority argument &mdash; the bottom halves still contend with the load
-    fixture on Core 1 &mdash; but it is the reason the fault injection in section 05 produces no visible
-    failure.</p>
+    <p>There is one thing the diagram does not show. <code>gpio_install_isr_service()</code> is called from
+    <code>app_main</code>, which runs on Core 0, so the interrupt gets allocated on Core 0 while both bottom
+    halves are pinned to Core 1. That makes every wake in this build a cross core wake. It does not change
+    the priority argument, since the bottom halves still contend with the load fixture on Core 1. It is,
+    however, the reason the fault injection in section 05 produces no visible failure.</p>
   </div>
 </section>
 
@@ -384,12 +397,12 @@
   <div class="wrap">
     <span class="lbl">04 &middot; Timing</span>
     <h2>Task table and WCET evidence</h2>
-    <p class="lede">Execution times are measured on-target with <code>esp_timer_get_time()</code> bracketing
-    each task body, sampled to a running maximum. Periods are the values in the shipped firmware.</p>
+    <p class="lede">Execution times are measured on target with <code>esp_timer_get_time()</code> bracketing
+    each task body, sampled into a running maximum. Periods are the values in the shipped firmware.</p>
 
     <div class="tbl-scroll">
       <table class="data">
-        <caption>Periodic load, Core 1 &mdash; measured quiescent WCET</caption>
+        <caption>Periodic load, Core 1, measured quiescent WCET</caption>
         <thead>
           <tr><th>Task</th><th>Priority</th><th>T (ms)</th><th>C (&#181;s)</th><th>U = C/T</th><th>Work</th></tr>
         </thead>
@@ -400,20 +413,21 @@
           <tr><td>load_d</td><td>2</td><td>1000</td><td>100011</td><td>0.1000</td><td>insertion sort, N=400</td></tr>
         </tbody>
         <tfoot>
-          <tr><td>Total</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>0.246</td><td>RM bound 0.757</td></tr>
+          <tr><td>Total</td><td>n/a</td><td>n/a</td><td>n/a</td><td>0.246</td><td>RM bound 0.757</td></tr>
         </tfoot>
       </table>
     </div>
     <p style="font-size:.9rem;color:var(--ink-2);margin-top:12px">
-      U = 0.246 &le; 4(2<sup>1/4</sup>&minus;1) = 0.757, so the set is schedulable under both
+      U = 0.246 is less than 4(2<sup>1/4</sup>&minus;1) = 0.757, so the set is schedulable under both
       rate-monotonic and EDF, treating the tasks as independent and periodic with deadline equal to period.
-      Heartbeat ratios of 182 / 91 / 37 / 19 at t = 18.18&nbsp;s confirm the periods empirically. Times are
-      Wokwi-simulated: internally consistent and reproducible, not silicon-accurate.
+      The heartbeat ratios of 182 / 91 / 37 / 19 at t = 18.18&nbsp;s confirm the periods from the logs.
+      These times are Wokwi simulated. They are internally consistent and reproducible, but they are not
+      silicon accurate.
     </p>
 
     <div class="tbl-scroll" style="margin-top:26px">
       <table class="data">
-        <caption>Bottom-half wake latency, worst observed</caption>
+        <caption>Bottom half wake latency, worst observed</caption>
         <thead>
           <tr><th>Configuration</th><th>Notification (&#181;s)</th><th>Semaphore (&#181;s)</th><th>Presses</th></tr>
         </thead>
@@ -429,113 +443,134 @@
 
     <div class="qa">
       <h3>1 &middot; What is in the ISR, and what is not</h3>
-      <p><strong>Kept.</strong> <code>esp_timer_get_time()</code> for the entry timestamp &mdash; ISR-safe,
-      and both the debounce gate and the latency measurement depend on it. The debounce comparison against
-      <code>last_edge_us</code>, which must run before signaling or one press becomes several events. The
-      writes to <code>isr_entry_time_us</code> and <code>presses_observed</code>, single words that the
-      bottom halves read. The <code>BaseType_t higher_woken</code> flag required by the
-      <code>FromISR</code> API. The two <code>FromISR</code> signal calls, which are the ISR's actual job
-      and the only ISR-safe variants. And <code>portYIELD_FROM_ISR</code>, which requests the context
-      switch on return.</p>
-      <p><strong>Removable.</strong> The two <code>gpio_set_level</code> calls on GPIO 19 are pure
-      instrumentation. They cost roughly 13&nbsp;&#181;s of pulse width and would come out of a shipping
-      build.</p>
-      <p><strong>Deliberately absent.</strong> No <code>printf</code> or <code>ESP_LOGI</code> &mdash;
-      logging takes a UART mutex, and taking a mutex from interrupt context is undefined behaviour. No
-      allocation, no blocking calls, no <code>vTaskDelay</code>, no bus transactions. All of that lives in
-      the bottom half, which is the entire reason the pattern exists.</p>
+
+      <h4>Kept</h4>
+      <ol>
+        <li><code>int64_t now = esp_timer_get_time();</code>
+        This is the timestamp read. It is ISR safe, and both the debounce gate and the latency measurement
+        need it.</li>
+        <li><code>if (now - last_edge_us &lt; DEBOUNCE_US) return; last_edge_us = now;</code>
+        This is the debounce gate. It rejects contact bounce so that one press counts as one event. It has
+        to run before any signaling, so it stays.</li>
+        <li><code>isr_entry_time_us = now; presses_observed++;</code>
+        These are the single word writes that the bottom halves read.</li>
+        <li><code>BaseType_t higher_woken = pdFALSE;</code>
+        This is the wake flag the <code>FromISR</code> API requires.</li>
+        <li><code>xSemaphoreGiveFromISR(...)</code> and <code>vTaskNotifyGiveFromISR(...)</code>
+        This is what the ISR exists to do. It flags that work is needed, and these are the ISR safe
+        variants.</li>
+        <li><code>portYIELD_FROM_ISR(higher_woken);</code>
+        This requests the context switch on return if a higher priority task became ready. This is also
+        the line I removed for the failure test in section 05.</li>
+      </ol>
+
+      <h4>Removable</h4>
+      <ol>
+        <li><code>gpio_set_level(ISR_PULSE_GPIO, 1/0)</code>
+        Not needed for function. It is only there so the logic analyzer can see ISR entry and exit. It
+        costs about 13&nbsp;&#181;s of pulse width and would come out of a shipping build.</li>
+      </ol>
+
+      <h4>Not included</h4>
+      <ol>
+        <li>No <code>printf</code> or <code>ESP_LOGI</code>. Logging takes a UART mutex, and taking a mutex
+        from an ISR is undefined behavior.</li>
+        <li>No I2C or other bus reads, since those block for milliseconds.</li>
+        <li>No <code>malloc</code>, no <code>vTaskDelay</code>, no heavy computation. All of that belongs
+        in the bottom half, which is the entire reason this pattern exists.</li>
+      </ol>
     </div>
 
     <div class="qa">
       <h3>2 &middot; Binary semaphore against direct task notification</h3>
-      <p>The reported maxima say notification wins by a wide margin &mdash; 30&nbsp;&#181;s against
-      2560&nbsp;&#181;s idle. That comparison does not survive inspection, and the instrumentation is why.</p>
-      <p>Both bottom halves subtract from a single shared <code>isr_entry_time_us</code>. They sit at equal
-      priority, so they run in sequence, and whichever runs second has the first one's
-      <code>ESP_LOGI</code> &mdash; a UART transmission &mdash; sitting inside its measured window. The idle
-      run makes this unambiguous: notification holds 20&ndash;30&nbsp;&#181;s across all 51 presses while the
-      semaphore column scatters across 915, 1138, 2381, 2387, 2537 and 2560&nbsp;&#181;s. A genuine
-      mechanism cost would be roughly constant, not spread over a 1.6&nbsp;ms range on an otherwise idle
-      core. At hits #49 and #50 of the loaded run the order flips, and notification becomes the path
+      <p>The reported maximums say notification wins easily, 30&nbsp;&#181;s against 2560&nbsp;&#181;s when
+      idle. That comparison does not hold up though, and the instrumentation is the reason why.</p>
+      <p>Both bottom halves subtract from the same <code>isr_entry_time_us</code>. They run at the same
+      priority, so they go one after the other, and whichever one runs second has the other task's
+      <code>ESP_LOGI</code> sitting inside its measured window. A UART print is not free.</p>
+      <p>The idle run makes this clear. Notification holds 20-30&nbsp;&#181;s across all 51 presses, while
+      the semaphore column scatters across 915, 1138, 2381, 2387, 2537 and 2560&nbsp;&#181;s. A real
+      mechanism cost would be close to constant. It would not spread over 1.6&nbsp;ms on an otherwise idle
+      core. Then at hits #49 and #50 of the loaded run the order flips, and notification becomes the path
       reading 2246&nbsp;&#181;s while the semaphore reads 151 and 416&nbsp;&#181;s.</p>
-      <p><strong>Conclusion.</strong> Real wake latency is 20&ndash;30&nbsp;&#181;s on both paths, and the
-      difference between them is below this instrument's noise floor. Direct notification should still be
-      cheaper in principle &mdash; it writes the target task's notification value directly rather than going
-      through a separate queue object &mdash; but this bench cannot demonstrate that, and claiming an 85&times;
-      advantage from these numbers would be wrong. Resolving it needs per-path timestamps and the log moved
+      <p>So the real wake latency is 20-30&nbsp;&#181;s on both paths, and the difference between the two
+      mechanisms is smaller than what this instrument can resolve. Direct notification should still be
+      cheaper in principle, since it writes the target task's notification value directly instead of going
+      through a separate queue object, but this bench cannot show that. Claiming an 85x advantage from these
+      numbers would be wrong. To measure it properly I would need per path timestamps and the log moved
       outside the timed window.</p>
     </div>
 
     <div class="qa">
       <h3>3 &middot; Latency under load, and which task is responsible</h3>
-      <p>Notification's worst case goes from 30&nbsp;&#181;s idle to 2692&nbsp;&#181;s loaded, about
-      90&times;. The obvious reading is that load task A causes it, since A at priority 15 is the only
-      fixture task that outranks the bottom halves at 12. <strong>The measured WCET refutes that.</strong>
-      A's execution time is 346&nbsp;&#181;s. One instance of A cannot produce a 2692&nbsp;&#181;s delay; it
-      is short by a factor of about eight. B, C and D at priorities 10, 5 and 2 cannot preempt the bottom
-      halves at all, so they contribute nothing to the blocking term.</p>
-      <p>So the worst-case blocking the load fixture can inflict is bounded by C<sub>A</sub> =
-      346&nbsp;&#181;s, and the remaining ~2.3&nbsp;ms is the same print-order contamination described
-      above &mdash; it appears in the loaded run for the same reason it appears idle.</p>
-      <p><strong>Independent evidence the ladder behaves as designed.</strong> Under press activity the
-      measured times for B, C and D inflate &mdash; B from 15238 to 23315&nbsp;&#181;s, C from 33368 to
-      41887, D from 100011 to 108528 &mdash; while A stays at exactly 346 across four separate runs. That
-      asymmetry is the priority ordering made visible: <code>MEASURE_WCET</code> brackets wall-clock time,
-      so for B, C and D it captures preemption by the priority-12 bottom halves as though it were execution.
-      A is never preempted by anything in this system, so its figure is a true WCET while the others are
-      response times with interference included. The quiescent values are the ones reported in the table.</p>
+      <p>Notification's worst case goes from 30&nbsp;&#181;s idle to 2692&nbsp;&#181;s loaded, which is
+      about 90x. The obvious answer is that load task A caused it, since A at priority 15 is the only task
+      in the fixture that outranks the bottom halves at 12.</p>
+      <p>The measured WCET says that is not possible. A runs for 346&nbsp;&#181;s. One instance of A cannot
+      produce a 2692&nbsp;&#181;s delay, since it is short by a factor of about eight. B, C and D at
+      priorities 10, 5 and 2 cannot preempt the bottom halves at all, so they contribute nothing.</p>
+      <p>So the worst case blocking the load fixture can cause is bounded by C<sub>A</sub> =
+      346&nbsp;&#181;s. The remaining 2.3&nbsp;ms or so is the same print order problem from question 2. It
+      shows up in the loaded run for the same reason it shows up when idle.</p>
+      <p>There is separate evidence that the ladder is working the way it is supposed to. While presses are
+      happening, the measured times for B, C and D go up. B goes from 15238 to 23315&nbsp;&#181;s, C from
+      33368 to 41887, and D from 100011 to 108528. A stays at exactly 346 across four separate runs. That
+      is the priority order showing up directly in the data. <code>MEASURE_WCET</code> brackets wall clock
+      time, so for B, C and D it counts preemption by the priority 12 bottom halves as if it were execution
+      time. Nothing in this system preempts A, so A's number is a true WCET while the other three are
+      response times with interference included. The table above reports the quiescent values.</p>
     </div>
 
     <div class="qa">
       <h3>4 &middot; Induced failure</h3>
-      <p>Covered in section 05.</p>
+      <p>Covered in section 05 below.</p>
     </div>
 
     <div class="grid2">
       <figure class="ev">
         <img src="assets/serial/wcet-and-heartbeats.png" alt="Serial log showing measured WCET values for the four load tasks and climbing heartbeat counters." />
-        <figcaption>WCET and heartbeats. Ratios 182 / 91 / 37 / 19 confirm the 100 / 200 / 500 / 1000&nbsp;ms
-        periods. Note B's first sample at 13191&nbsp;&#181;s before settling at 15238 &mdash; cold cache on
-        the first iteration.</figcaption>
+        <figcaption>WCET and heartbeats. The ratios 182 / 91 / 37 / 19 confirm the 100 / 200 / 500 /
+        1000&nbsp;ms periods. B's first sample reads 13191&nbsp;&#181;s before settling at 15238, which is
+        the cold cache on the first iteration.</figcaption>
       </figure>
       <figure class="ev">
         <img src="assets/serial/run-loaded-50presses.png" alt="Serial log of the loaded run across fifty button presses." />
-        <figcaption>Loaded run, 50 presses. The run-order flip at hits #49 and #50 is where the artifact
+        <figcaption>Loaded run, 50 presses. The run order flip at hits #49 and #50 is where the artifact
         moves from one path to the other.</figcaption>
       </figure>
       <figure class="ev">
         <img src="assets/serial/run-idle-50presses.png" alt="Serial log of the idle baseline run across fifty-one button presses." />
-        <figcaption>Idle baseline. Notification holds 30&nbsp;&#181;s; the semaphore column scatters between
-        915 and 2560&nbsp;&#181;s.</figcaption>
+        <figcaption>Idle baseline. Notification holds 30&nbsp;&#181;s while the semaphore column scatters
+        between 915 and 2560&nbsp;&#181;s.</figcaption>
       </figure>
       <figure class="ev">
         <img src="assets/waveforms/overview-147-edges.png" alt="Full logic analyzer capture showing 147 edges across both channels." />
-        <figcaption>Full capture, 147 edges. Every button edge produces exactly one ISR pulse &mdash; no
-        missed presses, no double triggers through the debounce gate.</figcaption>
+        <figcaption>Full capture, 147 edges. Every button edge produces exactly one ISR pulse, so no presses
+        were missed and the debounce gate never double triggered.</figcaption>
       </figure>
       <figure class="ev">
         <img src="assets/waveforms/deltat-1-15p35us.png" alt="Zoomed logic analyzer measurement with cursors showing a 15.35 microsecond delta." />
-        <figcaption>Cursor measurement at t &asymp; 10.9887&nbsp;s. &#916;T = 15.35&nbsp;&#181;s from button
-        edge to ISR pulse.</figcaption>
+        <figcaption>Cursor measurement at t = 10.9887&nbsp;s. &#916;T is 15.35&nbsp;&#181;s from button edge
+        to ISR pulse.</figcaption>
       </figure>
       <figure class="ev">
         <img src="assets/waveforms/deltat-3-15p35us.png" alt="Third zoomed logic analyzer measurement, also 15.35 microseconds." />
-        <figcaption>Third press at t &asymp; 15.0211&nbsp;s. Identical &#916;T to the hundredth of a
+        <figcaption>Third press at t = 15.0211&nbsp;s. Same &#916;T, down to the hundredth of a
         microsecond.</figcaption>
       </figure>
     </div>
 
     <div class="card">
       <h3>Two instruments, two different windows</h3>
-      <p>The 15.35&nbsp;&#181;s from the logic analyzer and the 20&ndash;30&nbsp;&#181;s from the serial log
-      measure different things and should not be expected to match. The analyzer spans button edge to ISR
-      pulse: hardware edge detection, the debounce comparison, and the ISR prologue. The serial figure spans
-      ISR entry to the bottom half actually running. The first is interrupt response; the second is wake
-      latency.</p>
-      <p>The analyzer figure repeats to the hundredth of a microsecond across three presses because the
-      simulator models the interrupt entry path with fixed timing. On silicon this would be a distribution,
-      widened by cache state, bus contention and pipeline effects. The precision here is a property of
-      Wokwi, not evidence of a deterministic interrupt path.</p>
+      <p>The 15.35&nbsp;&#181;s from the logic analyzer and the 20-30&nbsp;&#181;s from the serial log are
+      not measuring the same thing, so they should not be expected to match. The analyzer spans button edge
+      to ISR pulse, which covers hardware edge detection, the debounce comparison, and the ISR prologue. The
+      serial number spans ISR entry to the bottom half actually running. The first one is interrupt
+      response. The second one is wake latency.</p>
+      <p>The analyzer number repeats down to the hundredth of a microsecond across three presses because
+      the simulator models the interrupt entry path with fixed timing. On real hardware this would be a
+      distribution, spread out by cache state, bus contention and pipeline effects. The precision here is a
+      property of Wokwi. It is not evidence of a deterministic interrupt path.</p>
     </div>
   </div>
 </section>
@@ -544,29 +579,33 @@
   <div class="wrap">
     <span class="lbl">05 &middot; Fault injection</span>
     <h2>Removing the yield</h2>
-    <p class="lede">Build with <code>BREAK_YIELD 1</code> and the ISR returns without requesting a context
-    switch, after a <code>FromISR</code> call that set <code>higher_woken</code>.</p>
+    <p class="lede">Building with <code>BREAK_YIELD 1</code> makes the ISR return without requesting a
+    context switch, after a <code>FromISR</code> call has already set <code>higher_woken</code>.</p>
     <figure class="ev">
       <img src="assets/serial/run-brokenyield-loaded.png" alt="Serial log with the yield removed, showing per-press latency unchanged at 24 to 30 microseconds." />
-      <figcaption>Yield removed, under load. Per-press notification latency stays at 24&ndash;30&nbsp;&#181;s.</figcaption>
+      <figcaption>Yield removed, under load. Per press notification latency stays at
+      24-30&nbsp;&#181;s.</figcaption>
     </figure>
 
-    <p><strong>Rule broken.</strong> Omitting <code>portYIELD_FROM_ISR(higher_woken)</code> after a
-    <code>FromISR</code> primitive reported that a higher-priority task became ready.</p>
-    <p><strong>Predicted.</strong> The wake is delivered but not acted on until the next scheduler tick,
-    turning a microsecond-scale response into a millisecond-scale one.</p>
-    <p><strong>Observed.</strong> No change. Per-press latency stayed at 24&ndash;30&nbsp;&#181;s, and the
-    reported maximum stayed at 2692&nbsp;&#181;s &mdash; identical to the build with the yield intact.</p>
-    <p><strong>They do not match, and the reason is core placement.</strong> The ISR is allocated on Core 0
-    because <code>gpio_install_isr_service()</code> runs from <code>app_main</code>, while both bottom
-    halves are pinned to Core 1. A local yield request only affects the core the ISR is running on. Waking a
-    task on the <em>other</em> core does not use it &mdash; ESP-IDF raises an interprocessor interrupt
-    against Core 1, and Core 1 reschedules whether or not <code>portYIELD_FROM_ISR</code> was called. In
-    this configuration the line is dead code, which is why removing it changes nothing.</p>
+    <p><strong>Rule broken.</strong> I removed <code>portYIELD_FROM_ISR(higher_woken)</code> after a
+    <code>FromISR</code> primitive had already reported that a higher priority task became ready.</p>
+    <p><strong>Predicted.</strong> The wake gets delivered but nothing acts on it until the next scheduler
+    tick, which turns a microsecond scale response into a millisecond scale one.</p>
+    <p><strong>Observed.</strong> Nothing changed. Per press latency stayed at 24-30&nbsp;&#181;s and the
+    reported maximum stayed at 2692&nbsp;&#181;s, which is identical to the build with the yield in
+    place.</p>
+    <p><strong>They do not match, and core placement is the reason.</strong>
+    <code>gpio_install_isr_service()</code> runs from <code>app_main</code>, which is on Core 0, so the
+    interrupt gets allocated on Core 0. Both bottom half tasks are pinned to Core 1. A local yield request
+    only affects the core the ISR is running on. Waking a task on the other core does not use it. ESP-IDF
+    raises an interprocessor interrupt against Core 1, and Core 1 reschedules whether or not
+    <code>portYIELD_FROM_ISR</code> was called. In this configuration that line is dead code, which is why
+    taking it out changes nothing.</p>
     <p><strong>How to make the failure visible.</strong> Install the ISR service from a task pinned to
-    Core 1 so the interrupt and its bottom halves share a core. The yield then governs the wake, and
-    removing it should defer the response to the next tick. Predicted but not yet measured &mdash; the build
-    on this site keeps the original Core 0 placement, and this is the first thing I would test next.</p>
+    Core 1, so the interrupt and its bottom halves are on the same core. The yield then actually governs
+    the wake, and removing it should push the response out to the next tick. That is a prediction and not a
+    measurement. The build on this site keeps the original Core 0 placement, and testing this is the first
+    thing I would do next.</p>
   </div>
 </section>
 
@@ -574,10 +613,10 @@
   <div class="wrap">
     <span class="lbl">06 &middot; Safety</span>
     <h2>Hazard analysis and standard mapping</h2>
-    <p class="lede">Hazards are assessed in the style of ARP4761 &mdash; identify the failure condition,
-    its effect at system level, and the mitigation &mdash; with software objectives framed against DO-178C.
-    Clause references below are indicative and would need verification against the controlled documents
-    before use in a real certification package.</p>
+    <p class="lede">Hazards are assessed the way ARP4761 does it. Identify the failure condition, its
+    effect at system level, and the mitigation. Software objectives are framed against DO-178C. The
+    standard references below are indicative. They would need to be checked against the controlled
+    documents before being used in a real certification package.</p>
     <div class="tbl-scroll">
       <table class="data hz">
         <thead>
@@ -586,45 +625,45 @@
         <tbody>
           <tr>
             <td>Missed pulse</td>
-            <td>Binary semaphore carries no count; a second edge arriving while the first is being serviced is silently discarded</td>
-            <td>Undercount of radar returns; track quality degrades with no indication</td>
-            <td>Parallel notification path preserves a count. Not yet mitigated on the semaphore path</td>
-            <td>DO-178C robustness testing objectives; ARP4761 functional hazard assessment</td>
+            <td>A binary semaphore carries no count, so a second edge arriving while the first is still being serviced is silently dropped</td>
+            <td>Radar returns are undercounted and track quality degrades with no indication</td>
+            <td>The parallel notification path preserves a count. Not yet mitigated on the semaphore path</td>
+            <td>DO-178C robustness testing objectives, ARP4761 functional hazard assessment</td>
           </tr>
           <tr>
             <td>Double count from contact bounce</td>
-            <td>Mechanical bounce within a single press produces multiple edges</td>
-            <td>Overcount of returns; false target density</td>
-            <td>200&nbsp;&#181;s debounce gate evaluated before any signaling. Verified across 147 captured edges with no double triggers</td>
-            <td>DO-178C low-level requirement verification</td>
+            <td>Mechanical bounce inside a single press produces several edges</td>
+            <td>Returns are overcounted, giving false target density</td>
+            <td>A 200&nbsp;&#181;s debounce gate runs before any signaling. Verified across 147 captured edges with no double triggers</td>
+            <td>DO-178C low level requirement verification</td>
           </tr>
           <tr>
             <td>Deadline miss on the response path</td>
-            <td>Higher-priority periodic work blocks the bottom half</td>
-            <td>Late acknowledgement of a return</td>
-            <td>Only priority 15 outranks the handler, bounding blocking at C<sub>A</sub> = 346&nbsp;&#181;s. U = 0.246 against an RM bound of 0.757</td>
-            <td>ARP4761 quantitative assessment; rate-monotonic schedulability</td>
+            <td>Higher priority periodic work blocks the bottom half</td>
+            <td>A return is acknowledged late</td>
+            <td>Only priority 15 outranks the handler, so blocking is bounded at C<sub>A</sub> = 346&nbsp;&#181;s. U = 0.246 against an RM bound of 0.757</td>
+            <td>ARP4761 quantitative assessment, rate-monotonic schedulability</td>
           </tr>
           <tr>
-            <td>Undetected loss of context-switch request</td>
-            <td>A missing <code>portYIELD_FROM_ISR</code> is masked by cross-core wake behaviour, as demonstrated in section 05</td>
-            <td>A latent defect ships because testing on one core configuration cannot see it</td>
-            <td>None. Documented as a known gap; needs a same-core test configuration</td>
-            <td>DO-178C structural coverage and configuration-dependent verification</td>
+            <td>Undetected loss of the context switch request</td>
+            <td>A missing <code>portYIELD_FROM_ISR</code> is masked by cross core wake behavior, as shown in section 05</td>
+            <td>A latent defect ships, because testing on one core configuration cannot see it</td>
+            <td>None. Documented as a known gap. It needs a same core test configuration</td>
+            <td>DO-178C structural coverage and configuration dependent verification</td>
           </tr>
           <tr>
             <td>Corrupted telemetry maximum</td>
-            <td>Both bottom halves read-modify-write <code>latency_max_*</code> with no mutual exclusion</td>
-            <td>Reported worst-case latency understated; a real deadline breach could be hidden</td>
-            <td>Benign in practice &mdash; 32-bit accesses are atomic on Xtensa and the update is monotonic. Production would require atomics or a mutex</td>
+            <td>Both bottom halves read, modify and write <code>latency_max_*</code> with no mutual exclusion</td>
+            <td>Reported worst case latency is understated, so a real deadline breach could be hidden</td>
+            <td>Benign in practice, since 32-bit accesses are atomic on Xtensa and the update is monotonic. Production would need atomics or a mutex</td>
             <td>DO-178C data and control coupling analysis</td>
           </tr>
           <tr>
-            <td>First-interrupt latency spike</td>
-            <td>ISR resident in flash must be fetched on a cold cache</td>
+            <td>First interrupt latency spike</td>
+            <td>An ISR living in flash has to be fetched on a cold cache</td>
             <td>The first return after a quiet period is serviced tens of microseconds late</td>
-            <td><code>IRAM_ATTR</code> places the ISR in always-resident internal RAM</td>
-            <td>DO-178C worst-case execution time substantiation</td>
+            <td><code>IRAM_ATTR</code> places the ISR in always resident internal RAM</td>
+            <td>DO-178C worst case execution time substantiation</td>
           </tr>
         </tbody>
       </table>
@@ -638,9 +677,9 @@
     <h2>Reproducing this</h2>
     <div class="card">
       <h3>Wokwi</h3>
-      <p style="margin:0 0 12px">Open the project and press the green button on GPIO 18. Serial output
-      carries per-press latency for both paths; GPIO 19 carries the scope pulse. Add a logic analyzer on
-      D0 / D1 to reproduce the &#916;T measurement.</p>
+      <p style="margin:0 0 12px">Open the project and press the green button on GPIO 18. The serial output
+      carries per press latency for both paths, and GPIO 19 carries the scope pulse. Add a logic analyzer on
+      D0 and D1 to reproduce the &#916;T measurement.</p>
       <p style="margin:0"><span class="lbl">Project</span><br /><code>WAYS-FINAL-RTS26Summer</code></p>
     </div>
     <div class="card">
@@ -661,35 +700,37 @@ idf.py build -DBREAK_YIELD=1    # fault injection</pre>
     <h2>Looking back</h2>
     <div class="fill">
       <p>Draft below, built from what actually happened during this build. Rewrite it in your own voice
-      before you ship &mdash; this is the section a reader will most easily tell you did not write.</p>
+      before you ship it. This is the section a reader is most likely to notice you did not write.</p>
     </div>
 
     <div class="card">
       <h3>What I would do differently</h3>
-      <p>Instrument once, correctly, instead of interpreting around a flawed measurement. Both bottom
-      halves share one entry timestamp and log inside the timed window, and that single decision cost me
-      the comparison the application exists to make. I spent more effort explaining why the semaphore
-      number was not real than it would have taken to latch two timestamps and move the print. I would also
-      have checked that the documented periods matched the code before building an analysis on them &mdash;
-      the comments say 10 / 20 / 50 / 100&nbsp;ms and the firmware says 100 / 200 / 500 / 1000, a factor of
-      ten that would have made my utilization figure 2.46 and the whole task set infeasible.</p>
+      <p>I would instrument it once, correctly, instead of interpreting around a flawed measurement. Both
+      bottom halves share one entry timestamp and both log inside the timed window, and that single
+      decision cost me the comparison the whole application exists to make. I spent more effort explaining
+      why the semaphore number was not real than it would have taken to latch two separate timestamps and
+      move the print. I would also check that the documented periods matched the code before building an
+      analysis on top of them. The comments say 10 / 20 / 50 / 100&nbsp;ms and the firmware says 100 / 200 /
+      500 / 1000, which is a factor of ten. If I had trusted the comments my utilization would have come out
+      at 2.46 and the whole task set would have been infeasible.</p>
     </div>
     <div class="card">
       <h3>What was harder than expected</h3>
-      <p>Trusting arithmetic over a story that already sounded right. My first analysis attributed a
-      2692&nbsp;&#181;s delay to the priority-15 load task, which is a clean explanation and fits the
-      priority ladder exactly. Then I measured that task's execution time at 346&nbsp;&#181;s and the
-      explanation stopped being possible. The number I had been most confident about was the one that was
-      wrong, and nothing about the reasoning felt weak until it was checked against a measurement.</p>
+      <p>Trusting arithmetic over an explanation that already sounded right. My first analysis blamed a
+      2692&nbsp;&#181;s delay on the priority 15 load task, which is clean and fits the priority ladder
+      exactly. Then I measured that task's execution time at 346&nbsp;&#181;s and the explanation stopped
+      being possible. The number I had been most confident about was the one that was wrong, and nothing
+      about the reasoning felt weak until I checked it against a measurement.</p>
     </div>
     <div class="card">
       <h3>The most valuable thing I learned</h3>
-      <p>A measurement is a claim about a specific window, and most of the work is knowing which window.
-      The logic analyzer reads 15.35&nbsp;&#181;s and the serial log reads 20&ndash;30&nbsp;&#181;s for what
-      I was loosely calling the same thing, and both are correct because they bracket different events.
-      Same lesson in the fault injection: removing <code>portYIELD_FROM_ISR</code> produced no failure, not
-      because the rule is optional but because the ISR was on the other core and the line was never load
-      bearing. Reading a system correctly means knowing what your instrument is pointed at.</p>
+      <p>A measurement is a claim about one specific window, and most of the work is knowing which window
+      you are looking at. The logic analyzer reads 15.35&nbsp;&#181;s and the serial log reads
+      20-30&nbsp;&#181;s for what I was loosely calling the same thing, and both are correct, because they
+      bracket different events. The fault injection taught the same lesson. Removing
+      <code>portYIELD_FROM_ISR</code> produced no failure, not because the rule is optional but because the
+      ISR was on the other core and that line was never load bearing. Reading a system correctly means
+      knowing what your instrument is actually pointed at.</p>
     </div>
   </div>
 </section>
@@ -704,13 +745,13 @@ idf.py build -DBREAK_YIELD=1    # fault injection</pre>
     </p>
     <p style="margin:0 0 16px"><span class="lbl">Aaron Ways &middot; EEE 4775 Real-Time Systems &middot; Summer 2026</span></p>
     <div class="fill">
-      <p><strong>AI disclosure.</strong> Claude (Anthropic) was used across this capstone: reviewing the
-      App&nbsp;3 firmware and identifying three defects in the submitted version, directing the measurement
-      campaign, identifying the shared-timestamp instrumentation artifact, catching an arithmetic error in
-      my original attribution of the loaded latency to load task&nbsp;A, proposing the cross-core
-      explanation for the fault-injection result, and drafting this site including the analysis and
-      reflection prose. All measurements are mine, taken from the runs shown above.</p>
-      <p><strong>Paste the full chat URL here.</strong> Per Dr.&nbsp;Borowczak's instruction, the complete
+      <p><strong>AI disclosure.</strong> Claude (Anthropic) was used across this capstone. It reviewed the
+      App 3 firmware and found three defects in the version I had submitted, directed the measurement
+      campaign, identified the shared timestamp instrumentation artifact, caught an arithmetic error in my
+      original attribution of the loaded latency to load task A, proposed the cross core explanation for
+      the fault injection result, and drafted this site including the analysis and reflection text. All
+      measurements are mine, taken from the runs shown above.</p>
+      <p><strong>Paste the full chat URL here.</strong> Per Dr. Borowczak's instruction, the complete
       transcript accompanies this submission.</p>
     </div>
   </div>
