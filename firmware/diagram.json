@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "EEE 4775 scaffold",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-s3-devkitc-1",
+      "id": "esp",
+      "top": 57.42,
+      "left": -5.03,
+      "attrs": { "builder": "esp-idf" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 236.6,
+      "left": -144,
+      "attrs": { "color": "green", "xray": "", "bounce": "0" }
+    },
+    {
+      "type": "wokwi-logic-analyzer",
+      "id": "logic1",
+      "top": 153.95,
+      "left": 201.6,
+      "attrs": { "filename": "rts-su-2026-app3", "channelNames": "GPIO 19 / OUT, BTN GPIO 18 / IN" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "btn1:1.l", "esp:18", "green", [ "v-38.4", "v-28.8" ] ],
+    [ "btn1:2.r", "esp:GND.1", "black", [ "v10", "h-40" ] ],
+    [ "logic1:GND", "esp:GND.2", "black", [ "h-57.6", "v-153.6" ] ],
+    [ "logic1:D0", "esp:19", "green", [ "h-86.4", "v105.6" ] ],
+    [ "logic1:D1", "btn1:1.l", "green", [ "h-38.4", "v-153.6", "h-240", "v163.2", "h0" ] ]
+  ],
+  "serialMonitor": { "display": "terminal" },
+  "dependencies": {}
+}
