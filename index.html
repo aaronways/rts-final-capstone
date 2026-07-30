@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AVIONICS ISR — Real-Time Systems Final Capstone</title>
+<meta name="description" content="EEE 4775 final capstone: interrupt latency and bottom-half scheduling on ESP32-S3 under a rate-monotonic load, with measured WCET and logic-analyzer timing evidence." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    --ground:#EEF1F4;
+    --surface:#FFFFFF;
+    --ink:#101C26;
+    --ink-2:#4A5A66;
+    --ink-3:#75858F;
+    --rule:#CBD5DB;
+    --rule-soft:#DFE6EA;
+    --signal:#0B6E8F;
+    --signal-deep:#08556F;
+    --signal-wash:#E3EEF3;
+    --amber:#B4600F;
+    --amber-wash:#F7EBDC;
+    --trace-bg:#0E1620;
+    --trace-a:#3ED6D0;
+    --trace-b:#C9E265;
+    --f-panel:"Saira Condensed", "Arial Narrow", sans-serif;
+    --f-body:"Source Sans 3", system-ui, sans-serif;
+    --f-data:"IBM Plex Mono", ui-monospace, monospace;
+    --maxw:1000px;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--f-body);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+
+  a{color:var(--signal-deep)}
+  a:hover{color:var(--signal)}
+  :focus-visible{outline:3px solid var(--signal);outline-offset:3px}
+
+  /* ---------- panel label device: encodes the pin or signal, not decoration ---------- */
+  .lbl{
+    font-family:var(--f-panel);
+    font-weight:600;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    font-size:.72rem;
+    color:var(--ink-3);
+  }
+
+  /* ---------- masthead ---------- */
+  header.mast{
+    border-bottom:1px solid var(--rule);
+    background:var(--surface);
+    padding:26px 0 22px;
+  }
+  .mast-row{display:flex;flex-wrap:wrap;gap:14px;align-items:baseline;justify-content:space-between}
+  .mast h1{
+    font-family:var(--f-panel);
+    font-weight:700;
+    font-size:clamp(1.9rem,5.4vw,3.1rem);
+    letter-spacing:.02em;
+    line-height:1.02;
+    margin:6px 0 0;
+    text-transform:uppercase;
+  }
+  .mast h1 span{color:var(--signal)}
+  .mast .sub{color:var(--ink-2);margin:10px 0 0;max-width:60ch}
+
+  /* ---------- hero trace: the signature element ---------- */
+  .scope{
+    background:var(--trace-bg);
+    border-radius:4px;
+    margin:0;
+    padding:18px 16px 12px;
+    overflow:hidden;
+  }
+  .scope figcaption{
+    font-family:var(--f-data);
+    font-size:.78rem;
+    color:#8FA3AD;
+    margin-top:10px;
+    display:flex;flex-wrap:wrap;gap:6px 18px;
+  }
+  .scope svg{display:block;width:100%;height:auto}
+  section.hero{padding:34px 0 40px}
+  .readout{
+    display:flex;flex-wrap:wrap;gap:0;
+    border:1px solid var(--rule);
+    background:var(--surface);
+    margin-top:18px;
+  }
+  .readout div{
+    flex:1 1 150px;
+    padding:14px 16px;
+    border-right:1px solid var(--rule-soft);
+  }
+  .readout div:last-child{border-right:0}
+  .readout b{
+    display:block;
+    font-family:var(--f-data);
+    font-weight:600;
+    font-size:1.28rem;
+    color:var(--signal-deep);
+    margin-top:3px;
+  }
+
+  /* ---------- sections ---------- */
+  section.blk{padding:34px 0;border-top:1px solid var(--rule)}
+  section.blk > .wrap > h2{
+    font-family:var(--f-panel);
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    font-size:clamp(1.3rem,3vw,1.75rem);
+    margin:6px 0 4px;
+  }
+  .lede{color:var(--ink-2);max-width:70ch;margin:0 0 20px}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--rule);
+    padding:20px;
+    margin:0 0 18px;
+  }
+  .card h3{
+    font-family:var(--f-panel);
+    text-transform:uppercase;
+    letter-spacing:.07em;
+    font-size:.95rem;
+    margin:0 0 10px;
+    color:var(--ink);
+  }
+
+  /* ---------- data tables ---------- */
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table.data{
+    width:100%;
+    border-collapse:collapse;
+    font-family:var(--f-data);
+    font-size:.86rem;
+    background:var(--surface);
+    min-width:520px;
+  }
+  table.data caption{
+    text-align:left;
+    font-family:var(--f-panel);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    font-size:.72rem;
+    color:var(--ink-3);
+    padding:0 0 8px;
+  }
+  table.data th,table.data td{
+    border:1px solid var(--rule-soft);
+    padding:8px 11px;
+    text-align:right;
+  }
+  table.data th:first-child,table.data td:first-child{text-align:left}
+  table.data thead th{
+    background:var(--signal-wash);
+    color:var(--signal-deep);
+    font-weight:600;
+    white-space:nowrap;
+  }
+  table.data tfoot td{background:#F5F8F9;font-weight:600}
+
+  /* ---------- evidence figures ---------- */
+  figure.ev{margin:0 0 18px;background:var(--surface);border:1px solid var(--rule);padding:12px}
+  figure.ev img{display:block;width:100%;height:auto;border:1px solid var(--rule-soft)}
+  figure.ev figcaption{font-size:.85rem;color:var(--ink-2);margin-top:9px}
+  .grid2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+
+  /* ---------- author-fill markers ---------- */
+  .fill{
+    border-left:3px solid var(--amber);
+    background:var(--amber-wash);
+    padding:12px 15px;
+    margin:12px 0;
+    font-size:.93rem;
+    color:#5C3A11;
+  }
+  .fill p{margin:0 0 7px}
+  .fill p:last-child{margin:0}
+  .fill em{color:#7A4E16}
+
+  .videoframe{
+    position:relative;
+    padding-top:56.25%;
+    background:var(--trace-bg);
+    border:1px solid var(--rule);
+  }
+  .videoframe iframe,.videoframe .ph{
+    position:absolute;inset:0;width:100%;height:100%;border:0;
+  }
+  .videoframe .ph{
+    display:flex;align-items:center;justify-content:center;
+    color:#8FA3AD;font-family:var(--f-data);font-size:.85rem;text-align:center;padding:20px;
+  }
+
+  ul.tight{margin:0;padding-left:1.2em}
+  ul.tight li{margin-bottom:6px}
+
+  pre.code{
+    background:var(--trace-bg);color:#D5E2E8;
+    font-family:var(--f-data);font-size:.8rem;
+    padding:14px;overflow-x:auto;margin:0;
+  }
+
+  footer.foot{
+    border-top:1px solid var(--rule);
+    background:var(--surface);
+    padding:26px 0 40px;
+    color:var(--ink-2);
+    font-size:.9rem;
+  }
+  footer.foot a{margin-right:16px;white-space:nowrap}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap">
+    <div class="mast-row">
+      <span class="lbl">EEE 4775 &middot; Real-Time Systems &middot; Summer 2026</span>
+      <span class="lbl">ESP32-S3 &middot; FreeRTOS &middot; ESP-IDF</span>
+    </div>
+    <h1>Avionics <span>ISR</span> Latency Bench</h1>
+    <p class="sub">An interrupt-driven radar-pulse handler measured against a rate-monotonic
+    background load, instrumented three ways: on-chip timestamps, a scope pin, and a logic analyzer.</p>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="lbl">Signature measurement &middot; button edge to ISR pulse</span>
+    <figure class="scope">
+      <svg viewBox="0 0 940 250" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Two-channel logic analyzer trace. The button line falls, and 15.35 microseconds later the GPIO 19 ISR pulse rises for about 13 microseconds.">
+        <!-- graticule -->
+        <g stroke="#1E2C38" stroke-width="1">
+          <line x1="60" y1="30" x2="60" y2="220"/>
+          <line x1="240" y1="30" x2="240" y2="220"/>
+          <line x1="420" y1="30" x2="420" y2="220"/>
+          <line x1="600" y1="30" x2="600" y2="220"/>
+          <line x1="780" y1="30" x2="780" y2="220"/>
+        </g>
+
+        <!-- channel 1: GPIO 19 ISR pulse -->
+        <text x="0" y="58" fill="#3ED6D0" font-family="IBM Plex Mono, monospace" font-size="13">GPIO 19</text>
+        <polyline fill="none" stroke="#3ED6D0" stroke-width="2.4"
+          points="60,96 420,96 420,44 560,44 560,96 900,96"/>
+
+        <!-- channel 2: button, active low -->
+        <text x="0" y="182" fill="#C9E265" font-family="IBM Plex Mono, monospace" font-size="13">BTN 18</text>
+        <polyline fill="none" stroke="#C9E265" stroke-width="2.4"
+          points="60,132 260,132 260,196 900,196"/>
+
+        <!-- cursors -->
+        <line x1="260" y1="24" x2="260" y2="228" stroke="#3ED6D0" stroke-width="1.3" stroke-dasharray="4 4"/>
+        <line x1="420" y1="24" x2="420" y2="228" stroke="#F26D9B" stroke-width="1.3" stroke-dasharray="4 4"/>
+        <text x="266" y="22" fill="#3ED6D0" font-family="IBM Plex Mono, monospace" font-size="11">M1</text>
+        <text x="426" y="22" fill="#F26D9B" font-family="IBM Plex Mono, monospace" font-size="11">M2</text>
+
+        <!-- delta annotation -->
+        <line x1="260" y1="240" x2="420" y2="240" stroke="#E8B33B" stroke-width="1.6"/>
+        <line x1="260" y1="234" x2="260" y2="246" stroke="#E8B33B" stroke-width="1.6"/>
+        <line x1="420" y1="234" x2="420" y2="246" stroke="#E8B33B" stroke-width="1.6"/>
+        <text x="432" y="245" fill="#E8B33B" font-family="IBM Plex Mono, monospace" font-size="13"
+              font-weight="600">&#916;T = 15.35 &#181;s</text>
+      </svg>
+      <figcaption>
+        <span>rts-su-2026-app3.vcd</span>
+        <span>2 ch &middot; 1 ns resolution</span>
+        <span>reproduced across 3 measured presses</span>
+      </figcaption>
+    </figure>
+
+    <div class="readout">
+      <div><span class="lbl">Interrupt response</span><b>15.35 &#181;s</b></div>
+      <div><span class="lbl">Wake latency, idle</span><b>20&ndash;30 &#181;s</b></div>
+      <div><span class="lbl">Total utilization</span><b>U = 0.246</b></div>
+      <div><span class="lbl">RM bound, n=4</span><b>0.757</b></div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="overview">
+  <div class="wrap">
+    <span class="lbl">01 &middot; Overview</span>
+    <h2>What this system does</h2>
+    <div class="fill">
+      <p><strong>Write your one-sentence theme here.</strong> Reuse the identical sentence in the video and the README.</p>
+      <p><em>Then two or three sentences: what the system is, what the interrupt represents in the avionics framing, and why the priority ladder matters.</em></p>
+    </div>
+    <div class="card">
+      <h3>Configuration under test</h3>
+      <ul class="tight">
+        <li>Button on GPIO 18, internal pull-up, negative-edge interrupt, 200 &#181;s debounce gate.</li>
+        <li><code>IRAM_ATTR</code> ISR raises a scope pulse on GPIO 19, timestamps entry, and signals two bottom halves.</li>
+        <li>Two bottom-half tasks at priority 12 on Core 1: one binary semaphore, one direct task notification.</li>
+        <li>Four periodic load tasks on Core 1 at the rate-monotonic ladder, priorities 15 / 10 / 5 / 2.</li>
+        <li>Compile-time switches: <code>WITH_LOAD</code>, <code>BREAK_YIELD</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="demo">
+  <div class="wrap">
+    <span class="lbl">02 &middot; Demo</span>
+    <h2>Recorded walkthrough</h2>
+    <p class="lede">Three to five minutes with voiceover: theme, live demo, architecture and timing, fault injection, and what scales to production.</p>
+    <div class="videoframe">
+      <div class="ph">Replace this block with your YouTube embed iframe once the video is uploaded.</div>
+    </div>
+    <div class="fill">
+      <p>Paste your embed in place of the <code>&lt;div class="ph"&gt;</code> above:</p>
+      <p><code>&lt;iframe src="https://www.youtube.com/embed/VIDEO_ID" title="Capstone demo" allowfullscreen&gt;&lt;/iframe&gt;</code></p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="architecture">
+  <div class="wrap">
+    <span class="lbl">03 &middot; Architecture</span>
+    <h2>Concurrency and preemption</h2>
+    <p class="lede">Core 1 timeline, idle baseline against the loaded case. Only priority 15 outranks the
+    bottom halves, so it is the only load task that can delay a wake.</p>
+    <figure class="ev">
+      <img src="assets/diagrams/concurrency-timeline.png"
+           alt="Timeline diagram comparing Core 1 with no load against Core 1 under four periodic load tasks, showing running, ready, and blocked states." />
+      <figcaption>Task states across the button interrupt. Running holds the CPU; ready wants the CPU
+      and has been preempted; blocked is waiting on the button or finished for the period.</figcaption>
+    </figure>
+    <div class="fill">
+      <p><em>Two or three sentences on the data and control flow: interrupt in, signal, bottom half, and where the preemption boundary sits.</em></p>
+      <p><strong>Note the core placement honestly.</strong> The ISR service is installed from <code>app_main</code>, so the interrupt is allocated on Core 0 while both bottom halves are pinned to Core 1. Say so, and say what that implies for the fault-injection result below.</p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="timing">
+  <div class="wrap">
+    <span class="lbl">04 &middot; Timing</span>
+    <h2>Task table and WCET evidence</h2>
+    <p class="lede">Execution times are measured on-target with <code>esp_timer_get_time()</code> bracketing
+    each task body, sampled to a running maximum. Periods are the values in the shipped firmware.</p>
+
+    <div class="tbl-scroll">
+      <table class="data">
+        <caption>Periodic load, Core 1 &mdash; measured quiescent WCET</caption>
+        <thead>
+          <tr><th>Task</th><th>Priority</th><th>T (ms)</th><th>C (&#181;s)</th><th>U = C/T</th><th>Work</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>load_a</td><td>15</td><td>100</td><td>346</td><td>0.0035</td><td>xorshift32</td></tr>
+          <tr><td>load_b</td><td>10</td><td>200</td><td>15238</td><td>0.0762</td><td>32-tap FIR</td></tr>
+          <tr><td>load_c</td><td>5</td><td>500</td><td>33368</td><td>0.0667</td><td>CRC-32, 4 KiB</td></tr>
+          <tr><td>load_d</td><td>2</td><td>1000</td><td>100011</td><td>0.1000</td><td>insertion sort, N=400</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Total</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>0.246</td><td>RM bound 0.757</td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <p style="font-size:.9rem;color:var(--ink-2);margin-top:12px">
+      U = 0.246 &le; 0.757, so the set is schedulable under both rate-monotonic and EDF, treating the
+      tasks as independent and periodic with deadline equal to period. Times are Wokwi-simulated and
+      are internally consistent and reproducible rather than silicon-accurate.
+    </p>
+
+    <div class="tbl-scroll" style="margin-top:26px">
+      <table class="data">
+        <caption>Bottom-half wake latency, worst observed</caption>
+        <thead>
+          <tr><th>Configuration</th><th>Notification (&#181;s)</th><th>Semaphore (&#181;s)</th><th>Presses</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Idle, <code>WITH_LOAD 0</code></td><td>30</td><td>2560</td><td>51</td></tr>
+          <tr><td>Loaded, <code>WITH_LOAD 1</code></td><td>2692</td><td>2800</td><td>50</td></tr>
+          <tr><td>Loaded, <code>BREAK_YIELD 1</code></td><td>2692</td><td>2628</td><td>20</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="fill">
+      <p><strong>Read the measurement before you interpret it.</strong> Both bottom halves subtract from
+      one shared <code>isr_entry_time_us</code>, and whichever task runs second absorbs the first task's
+      UART print inside the measured window. In the idle run the semaphore figure scatters between 915
+      and 2560 &#181;s while notification holds 20&ndash;30 &#181;s; at hit #50 of the loaded run the order flips
+      and notification is the one reading 2246 &#181;s.</p>
+      <p><em>Your analysis: what the true per-path wake latency is, what the large numbers actually
+      measure, and what you would change in the instrumentation.</em></p>
+    </div>
+
+    <div class="grid2">
+      <figure class="ev">
+        <img src="assets/serial/wcet-and-heartbeats.png" alt="Serial log showing measured WCET values for the four load tasks and climbing heartbeat counters." />
+        <figcaption>WCET and heartbeats. Ratios 182 / 91 / 37 / 19 confirm the 100 / 200 / 500 / 1000 ms periods.</figcaption>
+      </figure>
+      <figure class="ev">
+        <img src="assets/serial/run-loaded-50presses.png" alt="Serial log of the loaded run across fifty button presses." />
+        <figcaption>Loaded run, 50 presses. Note the run-order flip at hits #49 and #50.</figcaption>
+      </figure>
+      <figure class="ev">
+        <img src="assets/serial/run-idle-50presses.png" alt="Serial log of the idle baseline run across fifty-one button presses." />
+        <figcaption>Idle baseline. Notification holds 30 &#181;s; the semaphore column scatters.</figcaption>
+      </figure>
+      <figure class="ev">
+        <img src="assets/waveforms/overview-147-edges.png" alt="Full logic analyzer capture showing 147 edges across both channels." />
+        <figcaption>Full capture, 147 edges. Every button edge produces exactly one ISR pulse.</figcaption>
+      </figure>
+      <figure class="ev">
+        <img src="assets/waveforms/deltat-1-15p35us.png" alt="Zoomed logic analyzer measurement with cursors showing a 15.35 microsecond delta." />
+        <figcaption>Cursor measurement at t &asymp; 10.9887 s. &#916;T = 15.35 &#181;s.</figcaption>
+      </figure>
+      <figure class="ev">
+        <img src="assets/waveforms/deltat-3-15p35us.png" alt="Third zoomed logic analyzer measurement, also 15.35 microseconds." />
+        <figcaption>Third press at t &asymp; 15.0211 s. Same &#916;T, to the hundredth of a microsecond.</figcaption>
+      </figure>
+    </div>
+    <div class="fill">
+      <p><em>One line on why that repetition is exact: the simulator models the interrupt entry path with
+      fixed timing, so hardware would show a distribution instead.</em></p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="fault">
+  <div class="wrap">
+    <span class="lbl">05 &middot; Fault injection</span>
+    <h2>Removing the yield</h2>
+    <p class="lede">Build with <code>BREAK_YIELD 1</code> and the ISR returns without requesting a context
+    switch. Predicted symptom: the wake is delivered but the task does not run until the next tick.</p>
+    <figure class="ev">
+      <img src="assets/serial/run-brokenyield-loaded.png" alt="Serial log with the yield removed, showing per-press latency unchanged at 24 to 30 microseconds." />
+      <figcaption>Yield removed, under load. Per-press notification latency stays at 24&ndash;30 &#181;s &mdash;
+      the predicted failure does not appear.</figcaption>
+    </figure>
+    <div class="fill">
+      <p><em>Name the rule you broke, the predicted symptom, the observed symptom, and whether they
+      match. Then explain the mechanism, and say what configuration change would make the failure
+      visible.</em></p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="hazard">
+  <div class="wrap">
+    <span class="lbl">06 &middot; Safety</span>
+    <h2>Hazard analysis and standard mapping</h2>
+    <p class="lede">Each hazard gets a cause, an effect at the system level, a mitigation present in the
+    firmware, and the clause it maps to.</p>
+    <div class="tbl-scroll">
+      <table class="data">
+        <caption>Fill every row &mdash; the examples show the required shape only</caption>
+        <thead>
+          <tr><th>Hazard</th><th>Cause</th><th>System effect</th><th>Mitigation</th><th>Standard</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Missed pulse</td><td>Binary semaphore has no count; a second edge during service is lost</td><td>Undercount of radar returns</td><td>&mdash;</td><td>&mdash;</td></tr>
+          <tr><td>Contact bounce double-count</td><td>Mechanical bounce inside one press</td><td>Overcount</td><td>200 &#181;s debounce gate ahead of signaling</td><td>&mdash;</td></tr>
+          <tr><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="fill">
+      <p><em>Candidate frameworks for an avionics theme: DO-178C for software life-cycle objectives,
+      ARP4761 for the hazard-assessment method, IEC 61508 if you prefer a generic functional-safety
+      framing. Pick one and cite specific clauses rather than the standard as a whole.</em></p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="build">
+  <div class="wrap">
+    <span class="lbl">07 &middot; Build and run</span>
+    <h2>Reproducing this</h2>
+    <div class="card">
+      <h3>Wokwi</h3>
+      <p style="margin:0 0 12px">Open the project and press the green button on GPIO 18. Serial output
+      carries per-press latency for both paths; GPIO 19 carries the scope pulse.</p>
+      <p style="margin:0"><span class="lbl">Project</span><br /><code>WAYS-FINAL-RTS26Summer</code></p>
+    </div>
+    <div class="card">
+      <h3>Local ESP-IDF</h3>
+      <pre class="code">idf.py set-target esp32s3
+idf.py build
+idf.py -p /dev/ttyUSB0 flash monitor
+
+idf.py build -DWITH_LOAD=1      # background load on Core 1
+idf.py build -DBREAK_YIELD=1    # fault injection</pre>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="reflection">
+  <div class="wrap">
+    <span class="lbl">08 &middot; Reflection</span>
+    <h2>Looking back</h2>
+    <div class="fill">
+      <p><strong>One to two pages, public.</strong> Three prompts: what you would do differently, what was
+      harder than expected, and the most valuable thing you learned.</p>
+      <p><em>Write it here or in <code>REFLECTION.md</code> and link it from this section.</em></p>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap">
+    <p style="margin:0 0 10px">
+      <a href="https://github.com/aaronways/rts-final-capstone">Repository</a>
+      <a href="firmware/main.c">main.c</a>
+      <a href="firmware/diagram.json">diagram.json</a>
+      <a href="README.md">README</a>
+    </p>
+    <p style="margin:0"><span class="lbl">Aaron Ways &middot; EEE 4775 Real-Time Systems &middot; Summer 2026</span></p>
+    <div class="fill" style="margin-top:16px">
+      <p><strong>AI disclosure goes here.</strong> The course policy requires the tool name and the chat
+      URL. State which parts were assisted and which are yours.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
