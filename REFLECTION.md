@@ -3,7 +3,6 @@
 EEE 4775 Real-Time Systems, Final Integration Capstone
 Aaron Ways, Summer 2026
 
-This capstone reuses Application 3, so what follows is what my original analysis got right, what it got wrong, and what re-measuring changed.
 
 ## What I would do differently
 
